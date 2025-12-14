@@ -1,0 +1,30 @@
+universe:
+  name: sp500_current_constituents
+  min_history_years: 3
+  price_field: adj_close
+
+target:
+  name: next_day_log_return
+  horizon_days: 1
+
+splits:
+  protocol: chronological
+  train_frac: 0.7
+  val_frac: 0.15
+  test_frac: 0.15
+  shuffle: false
+
+metrics:
+  primary: rmse
+  secondary:
+    - directional_accuracy
+    - mean_bias
+  
+  gates:
+    rmse_improvement_vs_zero_return_pct: 2.5
+    directional_accuracy_min: 0.5
+    directional_accuracy_ci: 0.95
+    directional_accuracy_ci_lower_bound_must_exceed: 0.5
+  
+  stop_condition:
+    stop_if_no_model_beats_baseline_on_test: true
