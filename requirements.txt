@@ -1,16 +1,18 @@
-numpy>=1.26,<3.0
-pandas>=2.1,<3.0
-pyarrow>=14,<20
-scikit-learn>=1.3,<2.0
-statsmodels>=0.14,<1.0
+numpy
+pandas
+pyarrow
+scikit-learn
+statsmodels
 
 # deep learning
-torch>=2.1,<3.0
+torch
 
 # time series library
-neuralforecast>=1.7,<2.0
+neuralforecast
 
 # utilities
-pyyaml>=6.0,<7.0
-tqdm>=4.66,<5.0
-matplotlib>3.8,<4.0
+pyyaml
+tqdm
+matplotlib
+requests
+lxml
