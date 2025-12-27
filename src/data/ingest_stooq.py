@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from io import StringIO
 from pathlib import Path
 
 import pandas as pd
@@ -14,7 +15,6 @@ STOOQ_BASE = "https://stooq.com/q/d/l"
 RAW_DIR = Path("data/raw")
 PRICES_DIR = RAW_DIR / "prices"
 MANIFEST_PATH = RAW_DIR / "manifest.csv"
-
 
 
 @dataclass(frozen=True)
@@ -56,15 +56,48 @@ def normalize_ticker_for_stooq(ticker: str) -> str:
   t = t.replace(".", "-") # BRK.B -> BRK-B
   return f"{t}.US"
 
+# -----------------------------
+# Download: Stooq daily data
+# -----------------------------
+
+def download_stooq_daily_csv(stooq_symbol: str, timeout: int = 30) -> pd.DataFrame:
+  """
+  Downloads daily data from Stooq. Returns DataFrame with columns:
+  date, open, high, low, close, volume
+  """
+  params = {"s": stooq_symbol.lower(), "i": "d"} # stooq expects lowercase symbol
+  r = requests.get(STOOQ_BASE, params=params, timeout=timeout)
+  r.raise_for_status()
+
+  # Stooq return CSV text; parse via pandas
+  df = pd.read_csv(StringIO(r.text))
+
+  if df.empty or "Date" not in df.columns:
+    raise ValueError("Empty or unexpected CSV format from Stooq.")
+  
+  # Canonicalize column names for raw layer readability
+  df = df.rename(columns={
+    "Date": "date",
+    "Open": "open",
+    "High": "high",
+    "Low": "low",
+    "Close": "close",
+    "Volume": "volume",
+  })
+
+  # Normalize date type and ordering
+  df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.date
+  df =  df.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
+
+  return df
 
 
 
 
 
 if __name__ == "__main__":
-  tickers = get_sp500_tickers_from_wikipedia()
-  for ticker in tickers:
-    print(normalize_ticker_for_stooq(ticker))
+  df = download_stooq_daily_csv("AAPL.US")
+  print(df.head())
 
 
 
