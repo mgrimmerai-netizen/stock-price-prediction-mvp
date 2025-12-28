@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import enum
 from io import StringIO
 from pathlib import Path
 
@@ -12,7 +13,7 @@ import requests
 # Config / constants
 # -----------------------------
 STOOQ_BASE = "https://stooq.com/q/d/l"
-RAW_DIR = Path("data/raw")
+RAW_DIR = Path("/content/repo/data_raw")
 PRICES_DIR = RAW_DIR / "prices"
 MANIFEST_PATH = RAW_DIR / "manifest.csv"
 
@@ -41,7 +42,7 @@ def get_sp500_tickers_from_wikipedia() -> list[str]:
   }
   response = requests.get(url, headers=headers)
   response.raise_for_status()
-  tables = pd.read_html(response.text)
+  tables = pd.read_html(StringIO(response.text))
   # extract tickers
   sp500 = tables[0]
   tickers = sp500["Symbol"].astype(str).tolist()
@@ -91,13 +92,113 @@ def download_stooq_daily_csv(stooq_symbol: str, timeout: int = 30) -> pd.DataFra
 
   return df
 
+# -----------------------------
+# Persistence: raw files + manifest
+# -----------------------------
 
+def ensure_dirs() -> None:
+    PRICES_DIR.mkdir(parents=True, exist_ok=True)
+    RAW_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def save_raw_ticker_csv(ticker: str, df: pd.DataFrame) -> Path:
+    """
+    Saves raw data for a ticker as CSV in data/raw/prices/{TICKER}.csv
+    """
+    out_path = PRICES_DIR / f"{ticker.upper()}.csv"
+    df.to_csv(out_path, index=False)
+    return out_path
+
+def append_manifest_row(row: dict) -> None:
+    """
+    Appends a single row to data/raw/manifest.csv (creates if absent).
+    """
+    ensure_dirs()
+    manifest_df = pd.DataFrame([row])
+    if MANIFEST_PATH.exists():
+        manifest_df.to_csv(MANIFEST_PATH, mode="a", header=False, index=False)
+    else:
+        manifest_df.to_csv(MANIFEST_PATH, mode="w", header=True, index=False)
+
+
+def ingest_sp500_raw_prices_stooq(
+  limit: int | None,
+  pause_every: int = 50,
+) -> list[DownloadResult]:
+  """
+  Main entrypoint: downloads raw daily price data for current S&P500 tickers.
+  Writes per-ticker CSV files and a manifest log.
+  """
+  ensure_dirs()
+
+  tickers = get_sp500_tickers_from_wikipedia()
+  if limit is not None:
+    tickers = tickers[:limit]
+  
+  results: list[DownloadResult] = []
+  ts = datetime.now(timezone.utc).isoformat()
+
+  for idx, ticker in enumerate(tickers, start=1):
+    stooq_symbol = normalize_ticker_for_stooq(ticker)
+
+    try:
+      df = download_stooq_daily_csv(stooq_symbol)
+
+      # Minimal sanity: need at least some data
+      if len(df) < 10:
+        raise ValueError(f"Too few rows ({len(df)}) returned.")
+      
+      save_raw_ticker_csv(ticker, df)
+
+      start_date = str(df["date"].iloc[0])
+      end_date = str(df["date"].iloc[-1])
+
+      res = DownloadResult(
+        ticker=ticker,
+        stooq_symbol=stooq_symbol,
+        status="ok",
+        rows=len(df),
+        start_date=start_date,
+        end_date=end_date,
+        error=None,
+      )
+
+    except Exception as e:
+      res = DownloadResult(
+        ticker=ticker,
+        stooq_symbol=stooq_symbol,
+        status="failed",
+        rows=0,
+        start_date=None,
+        end_date=None,
+        error=str(e),
+      )
+    
+    results.append(res)
+
+    # Write manifest entry for every ticker (including failures)
+    append_manifest_row({
+      "download_timestamp_utc": ts,
+      "source": "stooq",
+      "ticker": res.ticker,
+      "status": res.status,
+      "rows": res.rows,
+      "start_date": res.start_date,
+      "end_date": res.end_date,
+      "error": res.error,
+    })
+
+    # Optional: a lightweight pause hook if you later add rate limiting
+    if pause_every and idx % pause_every == 0:
+      pass
+  
+  return results
 
 
 
 if __name__ == "__main__":
-  df = download_stooq_daily_csv("AAPL.US")
-  print(df.head())
+    # MVP smoke test: limit to a small subset first
+    ingest_sp500_raw_prices_stooq(limit=10)
 
 
 
