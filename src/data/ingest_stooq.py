@@ -92,6 +92,47 @@ def download_stooq_daily_csv(stooq_symbol: str, timeout: int = 30) -> pd.DataFra
 
   return df
 
+  
+# -----------------------------
+# Data ingestion summary
+# -----------------------------
+def write_run_summary(results: list[DownloadResult], run_ts_utc: str) -> Path:
+  """
+  Writes a small per-run summary to data_raw/runs/{timestamp}_summary.txt
+  """
+
+  runs_dir = RAW_DIR / "runs"
+  runs_dir.mkdir(parents=True, exist_ok=True)
+
+  ok = [r for r in results if r.status == "ok"]
+  failed = [r for r in results if r.status == "failed"]
+
+  # Top errors by frequency (simple)
+  err_series = pd.Series([r.error for r in failed if r.error])
+  top_errors = err_series.value_counts().head(10) if not err_series.empty else pd.Series(dtype=int)
+
+  out_path = runs_dir / f"{run_ts_utc.replace(":", "").replace("+", "_")}_summary.txt"
+  lines = []
+  lines.append(f"download_timestamp_utc: {run_ts_utc}")
+  lines.append(f"source: stooq")
+  lines.append(f"tickers_total: {len(results)}")
+  lines.append(f"ok: {len(ok)}")
+  lines.append(f"failed: {len(failed)}")
+  lines.append("")
+
+  if len(failed) > 0:
+    lines.append("top_errors:")
+    for msg, cnt in top_errors.items():
+      lines.append(f" - {cnt}x: {msg}")
+    lines.append("")
+    lines.append("failed_tickers (first 25):")
+    for r in failed[:25]:
+      lines.append(f" - {r.ticker} ({r.stooq_symbol}): {r.error}")
+  
+  out_path.write_text("\n".join(lines))
+  return out_path
+
+
 # -----------------------------
 # Persistence: raw files + manifest
 # -----------------------------
@@ -191,6 +232,9 @@ def ingest_sp500_raw_prices_stooq(
     # Optional: a lightweight pause hook if you later add rate limiting
     if pause_every and idx % pause_every == 0:
       pass
+
+  summary_path = write_run_summary(results, ts)
+  print(f"Wrote run summary to: {summary_path}")
   
   return results
 
