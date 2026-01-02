@@ -240,9 +240,3 @@ def ingest_sp500_raw_prices_stooq(
 
 
 
-if __name__ == "__main__":
-    # MVP smoke test: limit to a small subset first
-    ingest_sp500_raw_prices_stooq(limit=10)
-
-
-

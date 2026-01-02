@@ -2,7 +2,7 @@ import sys
 from src.data.ingest_stooq import ingest_sp500_raw_prices_stooq
 
 if __name__ == "__main__":
-  results = ingest_sp500_raw_prices_stooq(limit=50)
+  results = ingest_sp500_raw_prices_stooq(limit=None)
 
   ok = sum(r.status == "ok" for r in results)
   failed = sum(r.status == "failed" for r in results)
